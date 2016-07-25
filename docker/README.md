@@ -10,6 +10,7 @@ Build the docker:
 ```
 # check if any is running
 docker ps
+# To tag the image into multiple repositories after the build, add multiple -t parameters when you run the build command:
 docker build -t opencvtensorflow .
 # confirm it is successful
 docker images
@@ -35,4 +36,15 @@ To shut down:
 ```
 docker ps
 docker kill <container-id>
+```
+
+### Remove all containers
+
+```
+docker rm $(docker ps -a -q)
+```
+
+#### Remove all images 
+```
+docker rmi $(docker images -q)
 ```
