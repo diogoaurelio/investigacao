@@ -1,0 +1,16 @@
+six
+dateutil
+requests
+py
+pytest
+coverage
+docutils
+jmespath
+python-dateutil
+numpy
+mkl
+libpng
+jpeg
+opencv
+pandas
+scikit-learn
