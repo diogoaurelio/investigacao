@@ -4,6 +4,7 @@ import pandas as pd
 
 ACTIVATION_FUNC_TYPES = ['sigmoid', 'tanh', 'relu']
 
+
 class NeuralNetwork(object):
     def __init__(self, num_nodes_per_layers, X, Y,
                  activation_func_type=None,
@@ -25,11 +26,12 @@ class NeuralNetwork(object):
                                           else ACTIVATION_FUNC_TYPES[0]
                                           for x in activation_func_type]
 
-        self._num_classes = len(self._num_nodes_per_layers[-1])
+        self._num_classes = num_nodes_per_layers[-1]
         self._epsilon = learning_rate
         self._reg_lambda = regularization
         self.hidden_layers = []
         self.y_target = Y
+        self.X = X
         self.data_format = data_format
         self.num_passes = num_passes
         self.verbose = verbose
@@ -37,14 +39,14 @@ class NeuralNetwork(object):
             self.num_input = len(X.columns)
         if isinstance(self.X, np.ndarray):
             self.num_input = self.X.shape[1]
-        if verbose:
+        if self.verbose:
             print('NN has: \n\t-> {0} output classes; '
                   '\n\t-> {1} hidden layers;'
                   '\n\t-> This amount of Neurons per hidden layer {2}'
                   .format(self._num_classes, len(self._num_nodes_hidden_layers),
                           self._num_nodes_hidden_layers))
 
-    def feed_forward(self, epoch, init_nn=False):
+    def feed_forward(self, epoch, init_nn=False, weights=None, b=None):
         """
             Constructs NeuralNetwork
         :return:
@@ -56,20 +58,18 @@ class NeuralNetwork(object):
                 print('Applying feedforward for epoch: {} ...'.format(epoch))
         for layer in xrange(len(self._num_nodes_hidden_layers)):
             output_size = self._num_nodes_hidden_layers[layer]
-            # randomly initialize for each layer
-            if init_nn:
-                weights = np.random.randn(input_size, output_size)
-                b = np.ones(1, output_size)
-            else:
-                # TODO
-                pass
             # specifics for layer 1 and others:
             if layer == 0:
                 input_size = self.num_input
-                layer_input = self.x
+                layer_input = self.X
             else:
                 input_size = self._num_nodes_hidden_layers[layer-1]
                 layer_input = self.hidden_layers[layer-1].activation_func
+
+            # randomly initialize for each layer
+            if init_nn:
+                weights = np.random.randn(input_size, output_size)
+                b = np.ones((1, output_size))
             hidden_layer = HiddenLayer(nn_input_dim=input_size, X=layer_input,
                                        W=weights, b=b, reg_lambda=self._reg_lambda,
                                        epsilon=self._epsilon,
@@ -82,13 +82,15 @@ class NeuralNetwork(object):
         num_hidden_layers=len(self.hidden_layers)
         for i in xrange(num_hidden_layers):
             cur_layer_idx = num_hidden_layers - i
-            prediction = self.hidden_layers[cur_layer_idx].prediction
-            self.hidden_layers[cur_layer_idx].compute_gradient(prediction)
+            if self.verbose:
+                print('\t\t-back prop for layer {0}, epoch {1}'.format(cur_layer_idx-1, epoch))
+            prediction = self.hidden_layers[cur_layer_idx-1].prediction
+            self.hidden_layers[cur_layer_idx-1].compute_gradient(prediction)
 
     def gradient_descent(self):
         if self.verbose:
             print('Initializing gradient descent')
-        for i in self.num_passes:
+        for i in xrange(self.num_passes):
 
             params = dict(epoch=i)
             if i == 0:
@@ -111,19 +113,20 @@ class HiddenLayer(object):
         self.nn_input_dim = nn_input_dim
         self.reg_lambda = reg_lambda
         self.epsilon = epsilon
-        self._x = self.x(X)
-        self._w = self.w(W)
-        self._z = self.z(X)
-        self._b = b
-        self._prediction = self._prediction(self.z)
-        self._activation_func = self.activation_func(activation_func_type)
+        self.x = X
+        self.w = W
+        self.b = b
+        self.set_z(self.w)
+        self.prediction = 'softmax'
+        self.activation_func = activation_func_type
         self.gradient = None
+        print('\t-- New hidden layer provisioned.')
 
     @property
     def x(self):
         return self._x
 
-    @property.setter
+    @x.setter
     def x(self, xi):
         self._x = xi
 
@@ -131,27 +134,26 @@ class HiddenLayer(object):
     def z(self):
         return self._z
 
-    @property
-    def w(self):
-        return self._w
-
-    @property.setter
-    def w(self, W):
-        self._w = W
-
-    @property.setter
-    def z(self, W):
+    def set_z(self, W):
         """ TODO: expand for for storage types
         :return:
         """
         if isinstance(self.x, (np.ndarray, pd.DataFrame)):
-            self.z = self.X.dot(W) + self.b
+            self._z = self.x.dot(W) + self.b
+
+    @property
+    def w(self):
+        return self._w
+
+    @w.setter
+    def w(self, W):
+        self._w = W
 
     @property
     def b(self):
         return self._b
 
-    @property.setter
+    @b.setter
     def b(self, b_val):
         if isinstance(self.x, (np.ndarray, pd.DataFrame)):
             self._b = b_val
@@ -160,7 +162,7 @@ class HiddenLayer(object):
     def prediction(self):
         return self._prediction
 
-    @property.setter
+    @prediction.setter
     def prediction(self, val='softmax'):
         if val == 'softmax':
             self._prediction = self.softmax()
@@ -170,7 +172,7 @@ class HiddenLayer(object):
     def activation_func(self):
         return self._activation_func
 
-    @property.setter
+    @activation_func.setter
     def activation_func(self, func_type):
         if func_type == 'sigmoid':
             self._activation_func = self.sigmoid()
@@ -205,16 +207,16 @@ class HiddenLayer(object):
             return 1. * (self.x > 0)
 
     def softmax(self):
-        if isinstance(self.X, (np.ndarray, pd.DataFrame)):
-            e = np.exp(self.x - np.max(self.x))  # prevent overflow
+        if isinstance(self.x, (np.ndarray, pd.DataFrame)):
+            e = np.exp(self.z)
             if e.ndim == 1:
                 return e / np.sum(e, axis=0)
             else:
-                return e / np.ndarray([np.sum(e, axis=1)]).T  # ndim = 2
+                return e / np.sum(e, axis=1, keepdims=True) #np.ndarray([np.sum(e, axis=1)]).T  # ndim = 2
 
     def compute_gradient(self, delta):
-        if isinstance(self.X, np.ndarray):
-            self.gradient = (self.activation_func.T).dot(delta) + self.w * self.reg_lambda
+        if isinstance(self.x, np.ndarray):
+            self.gradient = (self.activation_func.T).dot(delta) #+ self.w * self.reg_lambda
 
     def update_weights_and_bias(self):
         self.w += -self.epsilon * self.gradient
